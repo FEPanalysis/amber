@@ -1,0 +1,37 @@
+Started on Sun Dec 21 20:33:47 2014
+Loading in data from input_data/ti001/ti001.out...
+Loading in data from input_data/ti002/ti002.out...
+Loading in data from input_data/ti003/ti003.out...
+Loading in data from input_data/ti004/ti004.out...
+Loading in data from input_data/ti005/ti005.out...
+
+**** The average and standard error of the mean in raw data units: ****
+
+ State       Lambda            N    (Total N)      <dv/dl>          SEM    Filename
+     0       0.0000        85265     (500001)     8.523928     0.013598    input_data/ti001/ti001.out
+     1       0.2500        85265     (500001)     8.523928     0.013598    input_data/ti002/ti002.out
+     2       0.5000        85265     (500001)     8.523928     0.013598    input_data/ti003/ti003.out
+     3       0.7500        85265     (500001)     8.523928     0.013598    input_data/ti004/ti004.out
+     4       1.0000        85265     (500001)     8.523928     0.013598    input_data/ti005/ti005.out
+
+Estimating the free energy change with TI, TI-CUBIC...
+------------ ------------------------------- ------------------------------- 
+   States                TI (kcal/mol)             TI-CUBIC (kcal/mol)       
+------------ ------------------------------- ------------------------------- 
+   0 -- 1         2.13098196  +-  0.00240374      2.13098196  +-  0.00268652 
+   1 -- 2         2.13098196  +-  0.00240374      2.13098196  +-  0.00270292 
+   2 -- 3         2.13098196  +-  0.00240374      2.13098196  +-  0.00270292 
+   3 -- 4         2.13098196  +-  0.00240374      2.13098196  +-  0.00268652 
+------------ ------------------------------- ------------------------------- 
+    TOTAL:        8.52392784  +-  0.00635969      8.52392784  +-  0.00661194 
+
+****************************************************************************
+IIIIIIIIIIIIIIIIII   The above table has been stored in   IIIIIIIIIIIIIIIIII
+IIIIIIIIIIIIIIIIII         input_data/results.txt         IIIIIIIIIIIIIIIIII
+IIIIIIIIIIIIIIIIII     while the full-precision data      IIIIIIIIIIIIIIIIII
+IIIIIIIIIIIIIIIIII (along with the simulation profile) in IIIIIIIIIIIIIIIIII
+IIIIIIIIIIIIIIIIII       input_data/results.pickle        IIIIIIIIIIIIIIIIII
+****************************************************************************
+
+Time spent: 0 hours, 0 minutes, and 0.78 seconds.
+Finished on Sun Dec 21 20:33:48 2014
