@@ -5,20 +5,19 @@
 # in TIP3P water through alchemical free energy simulations.
 
 # Adapted by P. Klimovich and D. Mobley, March 2011, to be slightly more general.
-# Additionally adapted by Michael Shirts and P. Klimovich, May 2013
+# Additionally adapted by Michael Shirts and P. Klimovich, May 2013, Dec 2014.
 
 #===================================================================================================
 # IMPORTS
 #===================================================================================================
 
-## Not buil-in modules. Will be called from main, whenever needed.    ##
-## import pymbar     ## Multistate Bennett Acceptance Ratio estimator ##
-## import timeseries ## for timeseries analysis                       ##
+## Not a built-in module. Will be called from main, whenever needed. ##
+## import pymbar      Multistate Bennett Acceptance Ratio estimator. ##
 
 import numpy
 import pickle                       # for full-precision data storage
 from   optparse import OptionParser # for parsing command-line options
-import os                           # operating-system-dependent modules of Python
+import os                           # for os interface
 import time as ttt_time             # for timing
 import pdb                          # for debugging
 
@@ -27,12 +26,12 @@ import pdb                          # for debugging
 #===================================================================================================
 
 parser = OptionParser()
-parser.add_option('-a', '--software', dest = 'software', help = 'Package\'s name the data files come from. Default: Gromacs.', default = 'Gromacs')
+parser.add_option('-a', '--software', dest = 'software', help = 'Package\'s name the data files come from: Gromacs, Sire, or AMBER. Default: Gromacs.', default = 'Gromacs')
 parser.add_option('-c', '--cfm', dest = 'bCFM', help = 'The Curve-Fitting-Method-based consistency inspector. Default: False.', default = False, action = 'store_true')
 parser.add_option('-d', '--dir', dest = 'datafile_directory', help = 'Directory in which data files are stored. Default: Current directory.', default = '.')
 parser.add_option('-f', '--forwrev', dest = 'bForwrev', help = 'Plotting the free energy change as a function of time in both directions. The number of time points (an integer) is to be followed the flag. Default: 0', default = 0, type=int)
 parser.add_option('-g', '--breakdown', dest = 'breakdown', help = 'Plotting the free energy differences evaluated for each pair of adjacent states for all methods. Default: False.', default = False, action = 'store_true')
-parser.add_option('-i', '--threshold', dest = 'uncorr_threshold', help = 'Perform the analysis with rather all the data if the number of uncorrelated samples is found to be less than this number. If 0 is given, the time series analysis will not be performed at all.', default = 50, type=int)
+parser.add_option('-i', '--threshold', dest = 'uncorr_threshold', help = 'Proceed with correlated samples if the number of uncorrelated samples is found to be less than this number. If 0 is given, the time series analysis will not be performed at all. Default: 50.', default = 50, type=int)
 parser.add_option('-k', '--koff', dest = 'bSkipLambdaIndex', help = 'Give a string of lambda indices separated by \'-\' and they will be removed from the analysis. (Another approach is to have only the files of interest present in the directory). Default: None.', default = '')
 parser.add_option('-m', '--methods', dest = 'methods', help = 'A list of the methods to esitimate the free energy with. Default: [TI, TI-CUBIC, DEXP, IEXP, BAR, MBAR]. To add/remove methods to the above list provide a string formed of the method strings preceded with +/-. For example, \'-ti_cubic+gdel\' will turn methods into [TI, DEXP, IEXP, BAR, MBAR, GDEL]. \'ti_cubic+gdel\', on the other hand, will call [TI-CUBIC, GDEL]. \'all\' calls the full list of supported methods [TI, TI-CUBIC, DEXP, IEXP, GINS, GDEL, BAR, UBAR, RBAR, MBAR].', default = '')
 parser.add_option('-o', '--out', dest = 'output_directory', help = 'Directory in which the output files produced by this script will be stored. Default: Same as datafile_directory.', default = '')
@@ -42,7 +41,7 @@ parser.add_option('-r', '--decimal', dest = 'decimal', help = 'The number of dec
 parser.add_option('-s', '--skiptime', dest = 'equiltime', help = 'Discard data prior to this specified time as \'equilibration\' data. Units picoseconds. Default: 0 ps.', default = 0, type=float)
 parser.add_option('-t', '--temperature', dest = 'temperature', help = "Temperature in K. Default: 298 K.", default = 298, type=float)
 parser.add_option('-u', '--units', dest = 'units', help = 'Units to report energies: \'kJ\', \'kcal\', and \'kBT\'. Default: \'kJ\'', default = 'kJ')
-parser.add_option('-v', '--verbose', dest = 'verbose', help = 'Verbose option for BAR and MBAR. Default: False.', default = False, action = 'store_true')
+parser.add_option('-v', '--verbose', dest = 'verbose', help = 'Verbose option. Default: False.', default = False, action = 'store_true')
 parser.add_option('-w', '--overlap', dest = 'overlap', help = 'Print out and plot the overlap matrix. Default: False.', default = False, action = 'store_true')
 parser.add_option('-x', '--ignoreWL', dest = 'bIgnoreWL', help = 'Do not check whether the WL weights are equilibrated. No log file needed as an accompanying input.', default = False, action = 'store_true')
 parser.add_option('-y', '--tolerance', dest = 'relative_tolerance', help = "Convergence criterion for the energy estimates with BAR and MBAR. Default: 1e-10.", default = 1e-10, type=float)
@@ -87,7 +86,7 @@ def getMethods(string):
             parser.error("\nUnknown character '%s' in the method string is found." % c)
       return
 
-   if string=='all':
+   if string=='ALL':
       methods = all_methods
    else:
       primo = string[0]
@@ -140,8 +139,12 @@ def timeStatistics(stime):
 def uncorrelate(sta, fin, do_dhdl=False):
    """Identifies uncorrelated samples and updates the arrays of the reduced potential energy and dhdlt retaining data entries of these samples only.
       'sta' and 'fin' are the starting and final snapshot positions to be read, both are arrays of dimension K."""
-   if (not P.uncorr_threshold and P.software.title()=='Sire'):
-      return dhdlt, nsnapshots, None
+   if not P.uncorr_threshold:
+      if P.software.title()=='Sire':
+         return dhdlt, nsnapshots, None
+      return dhdlt, nsnapshots, u_klt
+
+   import pymbar     ## this is not a built-in module ##
 
    u_kln = numpy.zeros([K,K,max(fin-sta)], numpy.float64) # u_kln[k,m,n] is the reduced potential energy of uncorrelated sample index n from state k evaluated at state m
    N_k = numpy.zeros(K, int) # N_k[k] is the number of uncorrelated samples from state k
@@ -154,14 +157,14 @@ def uncorrelate(sta, fin, do_dhdl=False):
       dhdl_sum = numpy.sum(dhdlt[k,:,sta[k]:fin[k]], axis=0)
       # Determine indices of uncorrelated samples from potential autocorrelation analysis at state k
       # (alternatively, could use the energy differences -- here, we will use total dhdl).
-      g[k] = timeseries.statisticalInefficiency(dhdl_sum)
-      indices = numpy.array(timeseries.subsampleCorrelatedData(dhdl_sum, g=g[k])) # indices of uncorrelated samples
+      g[k] = pymbar.timeseries.statisticalInefficiency(dhdl_sum)
+      indices = sta[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dhdl_sum, g=g[k])) # indices of uncorrelated samples
       N = len(indices) # number of uncorrelated samples
       # Handle case where we end up with too few.
       if N < P.uncorr_threshold:
          if do_dhdl:
             print "WARNING: Only %s uncorrelated samples found at lambda number %s; proceeding with analysis using correlated samples..." % (N, k)
-         indices = numpy.arange(len(dhdl_sum))
+         indices = sta[k] + numpy.arange(len(dhdl_sum))
          N = len(indices)
       N_k[k] = N # Store the number of uncorrelated samples from state k.
       if not (u_klt is None):
@@ -204,11 +207,12 @@ def estimatewithMBAR(u_kln, N_k, reltol, regular_estimate=False):
 
       if P.bSkipLambdaIndex:
          ks = [int(l) for l in P.bSkipLambdaIndex.split('-')]
+         ks = numpy.delete(numpy.arange(K+len(ks)), ks)
       else:
-         ks = [9999]
+         ks = range(K)
       for i in range(K):
-         pl.annotate(i+(0 if i<ks[0] else len(ks)), xy=(i+0.5, 1), xytext=(i+0.5, K+0.5), size=10, textcoords=('data', 'data'), va='center', ha='center', color='k')
-         pl.annotate(i+(0 if i<ks[0] else len(ks)), xy=(-0.5, K-(j+0.5)), xytext=(-0.5, K-(i+0.5)), size=10, textcoords=('data', 'data'), va='center', ha='center', color='k')
+         pl.annotate(ks[i], xy=(i+0.5, 1), xytext=(i+0.5, K+0.5), size=10, textcoords=('data', 'data'), va='center', ha='center', color='k')
+         pl.annotate(ks[i], xy=(-0.5, K-(j+0.5)), xytext=(-0.5, K-(i+0.5)), size=10, textcoords=('data', 'data'), va='center', ha='center', color='k')
       pl.annotate('$\lambda$', xy=(-0.5, K-(j+0.5)), xytext=(-0.5, K+0.5), size=10, textcoords=('data', 'data'), va='center', ha='center', color='k')
       pl.plot([0,K], [0,0], 'k-', lw=4.0, solid_capstyle='butt')
       pl.plot([K,K], [0,K], 'k-', lw=4.0, solid_capstyle='butt')
@@ -230,7 +234,7 @@ def estimatewithMBAR(u_kln, N_k, reltol, regular_estimate=False):
 
    if regular_estimate:
       print "\nEstimating the free energy change with MBAR..."
-   MBAR = pymbar.MBAR(u_kln, N_k, verbose = P.verbose, method = 'adaptive', relative_tolerance = reltol, initialize = P.init_with)
+   MBAR = pymbar.mbar.MBAR(u_kln, N_k, verbose = P.verbose, method = 'adaptive', relative_tolerance = reltol, initialize = P.init_with)
    # Get matrix of dimensionless free energy differences and uncertainty estimate.
    (Deltaf_ij, dDeltaf_ij) = MBAR.getFreeEnergyDifferences(uncertainty_method='svd-ew')
    if P.verbose: 
@@ -413,13 +417,13 @@ def estimatePairs():
             #===================================================================================================
             # Estimate free energy difference with Forward-direction EXP (in this case, Deletion from solvent).
             #===================================================================================================   
-            (df['DEXP'], ddf['DEXP']) = pymbar.computeEXP(w_F)
+            (df['DEXP'], ddf['DEXP']) = pymbar.exp.EXP(w_F)
    
          if name == 'GDEL':
             #===================================================================================================
             # Estimate free energy difference with a Gaussian estimate of EXP (in this case, deletion from solvent)
             #===================================================================================================   
-            (df['GDEL'], ddf['GDEL']) = pymbar.computeGauss(w_F)
+            (df['GDEL'], ddf['GDEL']) = pymbar.exp.EXPGauss(w_F)
    
          if any(name == m for m in ['IEXP', 'GINS', 'BAR', 'UBAR', 'RBAR']):
             w_R = u_kln[k+1,k,0:N_k[k+1]] - u_kln[k+1,k+1,0:N_k[k+1]] 
@@ -428,27 +432,27 @@ def estimatePairs():
             #===================================================================================================
             # Estimate free energy difference with Reverse-direction EXP (in this case, insertion into solvent).
             #===================================================================================================   
-            (rdf,rddf) = pymbar.computeEXP(w_R)
+            (rdf,rddf) = pymbar.exp.EXP(w_R)
             (df['IEXP'], ddf['IEXP']) = (-rdf,rddf)
    
          if name == 'GINS':
             #===================================================================================================
             # Estimate free energy difference with a Gaussian estimate of EXP (in this case, insertion into solvent)
             #===================================================================================================   
-            (rdf,rddf) = pymbar.computeGauss(w_R)
+            (rdf,rddf) = pymbar.exp.EXPGauss(w_R)
             (df['GINS'], ddf['GINS']) = (-rdf,rddf)
    
          if name == 'BAR':
             #===================================================================================================
             # Estimate free energy difference with BAR; use w_F and w_R computed above.
             #===================================================================================================   
-            (df['BAR'], ddf['BAR']) = pymbar.computeBAR(w_F, w_R, relative_tolerance=P.relative_tolerance, verbose = P.verbose)      
+            (df['BAR'], ddf['BAR']) = pymbar.bar.BAR(w_F, w_R, relative_tolerance=P.relative_tolerance, verbose = P.verbose)      
    
          if name == 'UBAR':
             #===================================================================================================
             # Estimate free energy difference with unoptimized BAR -- assume dF is zero, and just do one evaluation
             #===================================================================================================   
-            (df['UBAR'], ddf['UBAR']) = pymbar.computeBAR(w_F, w_R, verbose = P.verbose,iterated_solution=False)
+            (df['UBAR'], ddf['UBAR']) = pymbar.bar.BAR(w_F, w_R, verbose = P.verbose,iterated_solution=False)
    
          if name == 'RBAR':
             #===================================================================================================
@@ -458,7 +462,7 @@ def estimatePairs():
             min_diff = 1E6
             best_udf = 0
             for trial_udf in range(-10,10,1):
-               (udf, uddf) = pymbar.computeBAR(w_F, w_R, DeltaF=trial_udf, iterated_solution=False, verbose=P.verbose)
+               (udf, uddf) = pymbar.bar.BAR(w_F, w_R, DeltaF=trial_udf, iterated_solution=False, verbose=P.verbose)
                diff = numpy.abs(udf - trial_udf)
                if (diff < min_diff):
                   best_udf = udf
@@ -823,6 +827,9 @@ def plotdFvsLambda():
       ax.xaxis.set_ticks_position('bottom')
       ax.yaxis.set_ticks_position('left')
 
+      for k, spine in ax.spines.items():
+         spine.set_zorder(12.2)
+
       xs, ndx, dx = [0], 0, 0.001
       colors = ['r', 'g', '#7F38EC', '#9F000F', 'b', 'y']
       min_y, max_y = 0, 0
@@ -932,9 +939,11 @@ def plotdFvsLambda():
       pl.close(fig)
       return
 
+   print "Plotting the free energy breakdown figure..."
    plotdFvsLambda1()
    plotdFvsLambda2()
    if ('TI' in P.methods or 'TI-CUBIC' in P.methods):
+      print "Plotting the TI figure..."
       plotTI()
 
 #===================================================================================================
@@ -944,6 +953,7 @@ def plotdFvsLambda():
 def plotCFM(u_kln, N_k, num_bins=100):
    """A graphical representation of what Bennett calls 'Curve-Fitting Method'."""
 
+   print "Plotting the CFM figure..."
    def leaveTicksOnlyOnThe(xdir, ydir, axis):
       dirs = ['left', 'right', 'top', 'bottom']
       axis.xaxis.set_ticks_position(xdir)
@@ -951,33 +961,31 @@ def plotCFM(u_kln, N_k, num_bins=100):
       return
 
    def plotdg_vs_dU(yy, df_allk, ddf_allk):
-      fig = pl.figure(figsize = (8,6))
-      matplotlib.rc('axes', facecolor = '#E3E4FA')
-      matplotlib.rc('axes', edgecolor = 'white')
       sq = (len(yy))**0.5
       h = int(sq)
       w = h + 1 + 1*(sq-h>0.5)
+      scale = round(w/3., 1)+0.4 if len(yy)>13 else 1
+      sf = numpy.ceil(scale*3) if scale>1 else 0
+      fig = pl.figure(figsize = (8*scale,6*scale))
+      matplotlib.rc('axes', facecolor = '#E3E4FA')
+      matplotlib.rc('axes', edgecolor = 'white')
       if P.bSkipLambdaIndex:
          ks = [int(l) for l in P.bSkipLambdaIndex.split('-')]
+         ks = numpy.delete(numpy.arange(K+len(ks)), ks)
+      else:
+         ks = range(K)
       for i, (xx_i, yy_i) in enumerate(yy):
          ax = pl.subplot(h, w, i+1)
          ax.plot(xx_i, yy_i, color='r', ls='-', lw=3, marker='o', mec='r')
          leaveTicksOnlyOnThe('bottom', 'left', ax)
-         ax.locator_params(axis='x', nbins=6)
+         ax.locator_params(axis='x', nbins=5)
+         ax.locator_params(axis='y', nbins=6)
          ax.fill_between(xx_i, df_allk[i]['BAR'] - ddf_allk[i]['BAR'], df_allk[i]['BAR'] + ddf_allk[i]['BAR'], color='#D2B9D3', zorder=-1)
-         if P.bSkipLambdaIndex:
-            if i<ks[-1]-len(ks):
-               i1, i2 = i, i+1
-            elif i==ks[-1]-len(ks):
-               i1, i2 = i, i+1+len(ks)
-            else:
-               i1, i2 = i+len(ks), i+1+len(ks)
-         else:
-            i1, i2 = i, i+1
-         ax.annotate(r'$\mathrm{%d-%d}$' % (i1, i2), xy=(0.5, 0.9), xycoords=('axes fraction', 'axes fraction'), xytext=(0, -2), size=14, textcoords='offset points', va='top', ha='center', color='#151B54', bbox = dict(fc='w', ec='none', boxstyle='round', alpha=0.5))
+
+         ax.annotate(r'$\mathrm{%d-%d}$' % (ks[i], ks[i+1]), xy=(0.5, 0.9), xycoords=('axes fraction', 'axes fraction'), xytext=(0, -2), size=14, textcoords='offset points', va='top', ha='center', color='#151B54', bbox = dict(fc='w', ec='none', boxstyle='round', alpha=0.5))
          pl.xlim(xx_i.min(), xx_i.max())
-      pl.annotate(r'$\mathrm{\Delta U_{i,i+1}\/(reduced\/units)}$', xy=(0.5, 0.03), xytext=(0.5, 0), xycoords=('figure fraction', 'figure fraction'), size=20, textcoords='offset points', va='center', ha='center', color='#151B54')
-      pl.annotate(r'$\mathrm{\Delta g_{i+1,i}\/(reduced\/units)}$', xy=(0.06, 0.5), xytext=(0, 0.5), rotation=90, xycoords=('figure fraction', 'figure fraction'), size=20, textcoords='offset points', va='center', ha='center', color='#151B54')
+      pl.annotate(r'$\mathrm{\Delta U_{i,i+1}\/(reduced\/units)}$', xy=(0.5, 0.03), xytext=(0.5, 0), xycoords=('figure fraction', 'figure fraction'), size=20+sf, textcoords='offset points', va='center', ha='center', color='#151B54')
+      pl.annotate(r'$\mathrm{\Delta g_{i+1,i}\/(reduced\/units)}$', xy=(0.06, 0.5), xytext=(0, 0.5), rotation=90, xycoords=('figure fraction', 'figure fraction'), size=20+sf, textcoords='offset points', va='center', ha='center', color='#151B54')
       pl.savefig(os.path.join(P.output_directory, 'cfm.pdf'))
       pl.close(fig)
       return
@@ -1031,9 +1039,10 @@ def plotCFM(u_kln, N_k, num_bins=100):
       counts_l, xbins_l, counts_r, xbins_r = stripZeros(counts_l, xbins_l, counts_r, xbins_r)
       counts_r, xbins_r, counts_l, xbins_l = stripZeros(counts_r, xbins_r, counts_l, xbins_l)
 
-      log_left = numpy.log(counts_l) - 0.5*xbins_l[:-1]
-      log_righ = numpy.log(counts_r) + 0.5*xbins_r[:-1]
-      diff = log_left - log_righ
+      with numpy.errstate(divide='ignore', invalid='ignore'):
+         log_left = numpy.log(counts_l) - 0.5*xbins_l[:-1]
+         log_righ = numpy.log(counts_r) + 0.5*xbins_r[:-1]
+         diff = log_left - log_righ
       yy.append((xbins_l[:-1], diff))
 
    plotdg_vs_dU(yy, df_allk, ddf_allk)
@@ -1057,8 +1066,6 @@ if __name__ == "__main__":
 
    if ''.join(P.methods).replace('TI-CUBIC', '').replace('TI', ''):
       import pymbar     ## this is not a built-in module ##
-   if P.uncorr_threshold:
-      import timeseries ## this is not a built-in module ##
    if (numpy.array([P.bForwrev, P.breakdown, P.bCFM, P.overlap]) != 0).any():
       import matplotlib # 'matplotlib-1.1.0-1'; errors may pop up when using an earlier version
       matplotlib.use('Agg')
@@ -1066,21 +1073,21 @@ if __name__ == "__main__":
       from matplotlib.font_manager import FontProperties as FP
 
    if P.software.title() == 'Gromacs':
-      import parser_gromacs
-      nsnapshots, lv, dhdlt, u_klt = parser_gromacs.readDataGromacs(P)
+      import parsers.parser_gromacs
+      nsnapshots, lv, dhdlt, u_klt = parsers.parser_gromacs.readDataGromacs(P)
    elif P.software.title() == 'Sire':
-      import parser_sire
-      nsnapshots, lv, dhdlt, u_klt = parser_sire.readDataSire(P)
+      import parsers.parser_sire
+      nsnapshots, lv, dhdlt, u_klt = parsers.parser_sire.readDataSire(P)
    elif P.software.title() == 'Amber':
-      import parser_amber
-      lv, ave_dhdl, std_dhdl = parser_amber.readDataAmber(P)
+      import parsers.parser_amber
+      lv, ave_dhdl, std_dhdl = parsers.parser_amber.readDataAmber(P)
    else:
       from inspect import currentframe, getframeinfo
       lineno = getframeinfo(currentframe()).lineno
-      print "\n\n%s\n You are analyzing data files that come from neither Gromacs nor Sire. \n Please modify lines %d and %d of this script.\n%s\n\n" % (78*"*", lineno+3, lineno+4, 78*"*")
+      print "\n\n%s\n Looks like there is no yet proper parser to process your files. \n Please modify lines %d and %d of this script.\n%s\n\n" % (78*"*", lineno+3, lineno+4, 78*"*")
       #### LINES TO BE MODIFIED
-      import YOUR_OWN_MODULE
-      nsnapshots, lv, dhdlt, u_klt = YOUR_OWN_MODULE.yourDataParser(*args, **kwargs)
+      import parsers.YOUR_OWN_FILE_PARSER
+      nsnapshots, lv, dhdlt, u_klt = parsers.YOUR_OWN_FILE_PARSER.yourDataParser(*args, **kwargs)
       #### All the four are numpy arrays.
       #### lv           is the array of lambda vectors.
       #### nsnapshots   is the number of equilibrated snapshots per each state.
@@ -1088,7 +1095,7 @@ if __name__ == "__main__":
       #### u_klt[k,m,t] is the reduced potential energy of snapshot t of state k evaluated at state m
 
    K, n_components = lv.shape
-   if P.do_main_uncorrelate:
+   if not P.software.title() == 'Amber':
       dhdl, N_k, u_kln = uncorrelate(sta=numpy.zeros(K, int), fin=nsnapshots, do_dhdl=True)
 
    # Estimate free energy difference with MBAR -- all states at once.
@@ -1112,7 +1119,7 @@ if __name__ == "__main__":
       plotdFvsLambda()
    if P.bCFM:
       if not (u_kln is None):
-         plotCFM(u_kln, 50)
+         plotCFM(u_kln, N_k, 50)
 
    print "\nTime spent: %s hours, %s minutes, and %s seconds.\nFinished on %s" % timeStatistics(stime)
 #===================================================================================================
